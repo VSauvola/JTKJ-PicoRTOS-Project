@@ -559,12 +559,9 @@ uint32_t veml6030_read_light() {
     uint32_t luxVal_uncorrected = 0; 
     if(i2c_write_blocking(i2c_default, VEML6030_I2C_ADDR, txBuffer, 1, true) != PICO_ERROR_GENERIC) {
         if(i2c_read_blocking(i2c_default, VEML6030_I2C_ADDR, rxBuffer, 2, false) != PICO_ERROR_GENERIC) {
-               
-                // Muunnetaan 2-tavuinen data rxBuffer:ssa
-                // lämpötilaksi (kaava harjoitustehtävissä)
-                //PART OF THE LAB SESSION
-            luxVal_uncorrected = (rxBuffer[1] << 8) * 0.0576;
-                // Temperature value to console window
+          
+            luxVal_uncorrected = (((0b0000000000000000|rxBuffer[1] ) << 8)|(0b0000000000000000|rxBuffer[0])) * 0.0576;
+                
                 
 
         }
