@@ -20,12 +20,12 @@ void imu_task(void *pvParameters) {
         if (ICM42670_start_with_default_values() != 0){
             printf("ICM-42670P could not initialize accelerometer or gyroscope");
         }
-        /*int _enablegyro = ICM42670_enable_accel_gyro_ln_mode();
+        int _enablegyro = ICM42670_enable_accel_gyro_ln_mode();
         printf ("Enable gyro: %d\n",_enablegyro);
         int _gyro = ICM42670_startGyro(ICM42670_GYRO_ODR_DEFAULT, ICM42670_GYRO_FSR_DEFAULT);
         printf ("Gyro return:  %d\n", _gyro);
         int _accel = ICM42670_startAccel(ICM42670_ACCEL_ODR_DEFAULT, ICM42670_ACCEL_FSR_DEFAULT);
-        printf ("Accel return:  %d\n", _accel);*/
+        printf ("Accel return:  %d\n", _accel);
     } else {
         printf("Failed to initialize ICM-42670P.\n");
     }
@@ -34,7 +34,9 @@ void imu_task(void *pvParameters) {
     {
         if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {
             
-            printf("Accel: X=%f, Y=%f, Z=%f | Gyro: X=%f, Y=%f, Z=%f| Temp: %2.2f°C\n", ax, ay, az, gx, gy, gz, t);
+            //printf("Accel: X=%f, Y=%f, Z=%f | Gyro: X=%f, Y=%f, Z=%f| Temp: %2.2f°C\n", ax, ay, az, gx, gy, gz, t);
+            printf("X=%f, Y=%f, Z=%f\n", gx, gy, gz);
+            //printf("X=%f, Y=%f, Z=%f\n", ax, ay, az);
 
         } else {
             printf("Failed to read imu data\n");
