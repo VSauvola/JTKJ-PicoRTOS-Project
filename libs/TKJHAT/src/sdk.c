@@ -342,7 +342,7 @@ int get_microphone_samples(int16_t* buffer, size_t samples) {
     ssd1306_clear(&disp);
 }
 
-
+//KOMMENTOITU LOPPUPÄÄSTÄ POIS
 void write_text_xy(int16_t x0, int16_t y0, const char *text) {
     if (!text) return;
 
@@ -356,7 +356,7 @@ void write_text_xy(int16_t x0, int16_t y0, const char *text) {
     ssd1306_show(&disp);
 
     // Delay for 800 milliseconds
-    sleep_ms(800);
+    //sleep_ms(800);
 }
 
 void write_text(const char *text) {
