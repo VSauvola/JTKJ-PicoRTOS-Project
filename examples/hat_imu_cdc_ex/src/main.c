@@ -20,7 +20,7 @@ void imu_task(void *pvParameters) {
     (void)pvParameters;
 
     
-    float ax, ay, az, gx, gy, gz, t;
+    float ax, ay, az, gx, gy, gz, t;//mainiin?
     // Setting up the sensor. 
     if (init_ICM42670() == 0) {
         usb_serial_print("ICM-42670P initialized successfully!\n");

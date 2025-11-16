@@ -16,8 +16,8 @@
 
 #include "tkjhat/sdk.h"
 #include <tusb.h>
-#include "/home/student/jtkj-projects/JTKJ-PicoRTOS-Project/libs/usb-serial-debug/include/usbSerialDebug/helper.h"
-#include "../../../.freertos/include/projdefs.h"
+#include "usbSerialDebug/helper.h"
+//#include "../../../.freertos/include/projdefs.h"
 
 
 // Default stack size for the tasks. It can be reduced to 1024 if task is not using lot of memory.
@@ -25,54 +25,80 @@
 #define BUFFER_SIZE         49
 #define CDC_ITF_TX          1
 
+
 //Add here necessary states
 enum state { WAITING=1, READ_SENSOR, NEW_MSG, UPDATE};
-enum state programState = WAITING;
+static enum state programState = WAITING;//lisätty static alkuun
 
 char txbuf[BUFFER_SIZE];     //tx bufferi = 10*4+5 = 45
 char rxbuf[BUFFER_SIZE];        //tulo bufferi
-volatile bool sw2_pressed = false;
-/*
-static void btn_fxn(uint gpio, uint32_t eventMask) {
-
-Keskeytyskäsittelijän määrittely
-vaihtaa tilaan READ_SENSOR kun painetaan -> aloitetaan luku
 
 
-    programState = READ_SENSOR;
+float ax, ay, az, gx, gy, gz, t;
+uint8_t mark_counter = 0;//lasketaan merkkejä
+
+//yehdäänpä näille hemmetin napeillekkin sitten taski:(
+volatile bool button1_pressed = false;//mussiikki
+volatile bool button2_pressed = false;//välilyönti
+
+void music(void);
+//txbuffiin lisäysfunktio
+void add_to_txbuf(char c){
+    if (programState != READ_SENSOR){
+        return;
+    }
+    if (mark_counter < BUFFER_SIZE - 1){
+        txbuf[mark_counter++] = c;
+        txbuf[mark_counter] = '\0';
+    }
+    else {
+        printf("txbuf ylivuoto!\nAloitetaan alusta:(");
+        mark_counter = 0;
+    }
 }
-*/
-/*
-TASKIEN MÄÄRITTELY
-*/
+
+//TASKIEN MÄÄRITTELY
+
 // sensorin luku
 static void sensorTask(void *arg){
     (void)arg;
     
-    float ax, ay, az, gx, gy, gz, t;
+    //float ax, ay, az, gx, gy, gz, t;//mainiin?
     
     while (1){
         if(programState == READ_SENSOR){
+            //printf("readSensor tilassa sensortask!\n");
             //TODO VALMIIKSI
             if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {
+                printf("%.2f, %.2f\n", gx, gy);// ei koskaan päästä?
                 if (gx > 240 || gx < -240) {
+                    //ongelmana, että pelkkä sprintf kirjoittaa koko paskan yli
+                    
+                    printf("merkkilaskuri: %i", mark_counter);
+                    printf(" . tunnistettu!\n");
+                    //snprintf(txbuf,BUFFER_SIZE, ".");
+                    add_to_txbuf('.');//lisää kivasti txbufferiin
+                    printf("txbuf=%s\n", txbuf);
 
-                    snprintf(txbuf,BUFFER_SIZE, ".");
-
+                    
 
                     rgb_led_write(255, 0, 255);     //vihreä LED
                     vTaskDelay(pdMS_TO_TICKS(100));
-                    stop_rgb_led();
+                    //stop_rgb_led();
+                    rgb_led_write(0,0,0);
                     vTaskDelay(pdMS_TO_TICKS(100));
 
                 } else if (gy > 240 || gy < -240){
-
-                    snprintf(txbuf,BUFFER_SIZE, "-");
-
+                    
+                    printf("merkkilaskuri: %i", mark_counter);
+                    printf(" - tunnistettu!\n");
+                    //snprintf(txbuf,BUFFER_SIZE, "-");
+                    add_to_txbuf('-');
+                    printf("txbuf=%s\n", txbuf);
 
                     rgb_led_write(255, 0, 255);     //vihreä LED
                     vTaskDelay(pdMS_TO_TICKS(100));
-                    stop_rgb_led();
+                    rgb_led_write(0,0,0);
                     vTaskDelay(pdMS_TO_TICKS(100));
 
                 }
@@ -81,7 +107,13 @@ static void sensorTask(void *arg){
                 printf("Failed to read imu data\n");
             }
             //käydään buf alkiot läpi. jos 2 peräkkäistä välilyöntiä->tilanmuutos
-            for (int i = 1; i<BUFFER_SIZE; i++){
+
+            //välilyöntitaskiin
+            
+            /*for (int i = 1; i<BUFFER_SIZE; i++){
+                printf("sensortask for-silmukka!\n");
+                tud_cdc_n_write(CDC_ITF_TX, txbuf, strlen(txbuf));
+                tud_cdc_n_write_flush(CDC_ITF_TX);
                 if (txbuf[i] == ' ' && txbuf[i-1] == ' '//jos 2 peräkkäistä väl. ja (...) ->lähetys
                     && tud_cdc_n_connected(CDC_ITF_TX)){//jos tudi linjoilla->ykok
                     sprintf(txbuf,"\n");
@@ -95,17 +127,18 @@ static void sensorTask(void *arg){
                     stop_rgb_led();
                     vTaskDelay(pdMS_TO_TICKS(100));
 
-                    programState = WAITING;
+                    
                 }
-            }
+            programState = WAITING;//siirretty for-silmukan ulkopuolelle
+            }*/
         }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
 
-// usb-viestintä
-static void msgTask(void *arg){
+// usb-viestintä  KORVATAAN CALLBACKILLÄ?!
+/*static void msgTask(void *arg){
     (void)arg;
 
     size_t index = 0;
@@ -140,7 +173,7 @@ static void msgTask(void *arg){
             }
         }
     }
-}
+}*/
 
 // näytön päivitys
 static void printTask(void *arg){
@@ -149,6 +182,7 @@ static void printTask(void *arg){
     while (1){
         
         if (programState == UPDATE) {
+            printf("printtask käynnissä!\n");
             clear_display();
 
             rgb_led_write(255, 255, 0);     //sininen LED
@@ -211,17 +245,20 @@ static void ledtask(void *arg) {
     
     while (1) {
         if (programState == UPDATE) {
+            printf("ledtask käynnissä!\n");
             for (int i = 0; i < BUFFER_SIZE; i++) {
-                if (rxbuf[i] = '.') {
+                if (rxbuf[i] == '.') {
                     rgb_led_write(50, 50, 50);     // valkoinen LED
                     vTaskDelay(pdMS_TO_TICKS(500));
-                    stop_rgb_led();
+                    //stop_rgb_led();
+                    rgb_led_write(0,0,0);
                     vTaskDelay(pdMS_TO_TICKS(200));
                 }
-                else if (rxbuf[i] = '-') {
+                else if (rxbuf[i] == '-') {
                     rgb_led_write(50, 50, 50);     // valkoinen LED
-                    vTaskDelay(pdMS_TO_TICKS(1000));
-                    stop_rgb_led();
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                    //stop_rgb_led();
+                    rgb_led_write(0,0,0);
                     vTaskDelay(pdMS_TO_TICKS(200));                   
                 }
             }
@@ -242,66 +279,200 @@ static void usbTask(void *arg){
 }
 
 
-// napin tarkkailuun
-static void switchTask(void *arg){
+// napin tarkkailuun välilyönti
+/*static void switchTask(void *arg){
     (void)arg;
 
     while (1){
-        if (programState == READ_SENSOR){
+        
+        tilan pitäisi olla waiting ja siirtyä read sensor?->ei turhia välilyöntejä
+        
+        if (programState == WAITING){
+            
             sw2_pressed = gpio_get(SW2_PIN);
             if (sw2_pressed == true){
+                printf("välinappi painettu!\n");
                 sprintf(txbuf," ");
+                printf("TX: %s\n", txbuf);
                 //usb_serial_print(txbuf);
+                programState = READ_SENSOR;
+                printf("switchtask lila->read_sensor\n");
             }
             
         }
         vTaskDelay(pdMS_TO_TICKS(50));  //lyhyt aika, jotta nähdään paremmin
     }
-}
+}*/
 
-// musiikin soitto
-static void music(uint gpio, uint32_t eventMask){
+//uusi swich task!!!
+static void switchTask(void *arg){
+    (void)arg;
+    
+    while (1) {
+
+        if (button2_pressed){
+            button2_pressed = false;
+
+            if (programState == WAITING){
+                programState = READ_SENSOR;
+            }
+            else if (programState == READ_SENSOR){
+                printf("välinappi painettu!\n");
+                
+                add_to_txbuf(' ');
+                printf("txbuf=%s\n", txbuf);
+                //sprintf(txbuf," ");
+                //käydään txbuff läpi ja etsitään välilyönnit
+                for (int i = 1; i < BUFFER_SIZE; i++){
+                    if (txbuf[i] == ' ' && txbuf[i-1] == ' '){//jos 2 peräkkäistä väl. ja (...) ->lähetys
+                    //&& tud_cdc_n_connected(CDC_ITF_TX)){//jos tudi linjoilla->ykok  
+
+                        printf("lähetysehdot ok!");
+
+                        while (!tud_mounted() || !tud_cdc_n_connected(1)){
+                                vTaskDelay(pdMS_TO_TICKS(50));
+                        }
+                        usb_serial_flush();  
+                        
+                        if(tud_cdc_n_connected(CDC_ITF_TX)){
+                            tud_cdc_n_write(CDC_ITF_TX, txbuf, strlen(txbuf));
+                            tud_cdc_n_write_flush(CDC_ITF_TX);
+                        }
+                        
+
+                        //sprintf(txbuf,"\n");
+                        if (usb_serial_connected()){
+                            usb_serial_print("pitäisi olla lähtenyt:\n");
+                            usb_serial_print(txbuf);
+                            usb_serial_flush();
+                        }
+                        memset(txbuf, 0, BUFFER_SIZE);
+                        mark_counter = 0;
+                        rgb_led_write(255, 0, 255);     //vihreä LED = lähetys ok
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                        rgb_led_write(0, 0, 0);
+
+                        programState = WAITING;
+                        break; // pitäisi pysäyttää loop
+                    }
+                }
+
+            } 
+            
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }  
+}
+//keskeytys, joka lisää välilyönnin, jos ollaan read_sensor ja lähettää, jos 2 väliä
+
+/*static void vali(void){
+    if (programState == WAITING){
+        programState = READ_SENSOR;
+    }
+    else if (programState == READ_SENSOR){
+        printf("välinappi painettu!\n");
+        
+        add_to_txbuf(' ');
+        printf("txbuf=%s\n", txbuf);
+        //sprintf(txbuf," ");
+        //käydään txbuff läpi ja etsitään välilyönnit
+        for (int i = 1; i < BUFFER_SIZE; i++){
+            if (txbuf[i] == ' ' && txbuf[i-1] == ' '){//jos 2 peräkkäistä väl. ja (...) ->lähetys
+            //&& tud_cdc_n_connected(CDC_ITF_TX)){//jos tudi linjoilla->ykok  
+
+                printf("lähetysehdot ok!");
+
+                //sprintf(txbuf,"\n");//rivinvaihto loppuun
+                tud_cdc_n_write(CDC_ITF_TX, txbuf, strlen(txbuf));
+                tud_cdc_n_write_flush(CDC_ITF_TX);  //lähetys 
+                printf("%s",txbuf);
+                memset(txbuf, 0, BUFFER_SIZE); //copilot
+
+                rgb_led_write(255, 0, 255);     //vihreä LED = lähetys ok
+                //vTaskDelay(pdMS_TO_TICKS(100));
+                stop_rgb_led();
+                
+                programState = WAITING;
+            }
+        }
+
+    }
+
+}*/
+
+// musiikin soitto !NYT OK!
+void music(){
     buzzer_play_tone(330, 500);
     buzzer_play_tone(277, 500);
     buzzer_play_tone(294, 500);
-    buzzer_play_tone(330, 1500);
+    buzzer_play_tone(330, 1250);
     buzzer_play_tone(440, 500);
-    buzzer_play_tone(494, 1500);
+    buzzer_play_tone(494, 1250);
     buzzer_play_tone(330, 250);
     buzzer_play_tone(554, 1500);
     buzzer_play_tone(440, 1000);
-    buzzer_play_tone(370, 1500);
+    buzzer_play_tone(370, 1250);
     buzzer_play_tone(494, 250);
     buzzer_play_tone(440, 1000);
     buzzer_play_tone(415, 1000);
-    buzzer_play_tone(440, 1500);
+    buzzer_play_tone(440, 1250);
     buzzer_turn_off();
+}
+
+//perkeleen helvetin musiikkitaski taas :)
+static void musicTask(void *arg){
+    (void)arg;
+
+    while(1){
+        if (button1_pressed){
+            button1_pressed = false;
+            music();
+
+        }
+    vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+static void button_callback(uint gpio, uint32_t eventMask){
+    //tarkastetaan callbackistä, kumpi nappi painettiin
+    if (gpio == BUTTON1){//musiikki
+        button1_pressed = true;//vaihetaan trueksi nappipaskassa takasin
+    }
+    else if (gpio == BUTTON2){
+        button2_pressed = true;
+    }
 }
 
 int main() {
 
     stdio_init_all();
     // Uncomment this lines if you want to wait till the serial monitor is connected
-    /*while (!stdio_usb_connected()){
+    /*sleep_ms(500);
+    while (!stdio_usb_connected()){
         sleep_ms(10);
-    }*/ 
+    }*/
+    printf("testi\n");
     init_hat_sdk();
-    sleep_ms(300); //Wait some time so initialization of USB and hat is done.
+    //sleep_ms(300); //Wait some time so initialization of USB and hat is done.
 
-
+    
 //OMAT ALUSTUKSET
+    //bufferit
+    memset(txbuf, 0, BUFFER_SIZE);
+    memset(rxbuf, 0, BUFFER_SIZE);
     //näyttö
     init_display();
-
+    clear_display();
     //napit
     gpio_init(BUTTON1);
     gpio_init(BUTTON2);
     gpio_set_dir(BUTTON1, GPIO_IN);
     gpio_set_dir(BUTTON2, GPIO_IN);
-    //gpio_set_irq_enabled_with_callback(BUTTON1, GPIO_IRQ_EDGE_RISE, true, &btn_fxn);//välilyön
-    gpio_set_irq_enabled_with_callback(BUTTON1, GPIO_IRQ_EDGE_RISE, true, &music);
+    gpio_set_irq_enabled_with_callback(BUTTON1, GPIO_IRQ_EDGE_RISE, true, &button_callback);//musiikki
+    gpio_set_irq_enabled(BUTTON2, GPIO_IRQ_EDGE_RISE, true);//väli
 
     // IMU 
+    
     if (init_ICM42670() == 0) {
         //_print("ICM-42670P initialized successfully!\n");
         if (ICM42670_start_with_default_values() != 0){
@@ -313,27 +484,20 @@ int main() {
 
     //rgb led
     init_rgb_led();
-
+    rgb_led_write(0,0,0);
+    //stop_rgb_led();
     //buzzer
     init_buzzer();
 
 
-    if (init_ICM42670() == 0) {
-        //printf("ICM-42670P initialized successfully!\n");
-        if (ICM42670_start_with_default_values() != 0){
-            //printf("ICM-42670P could not initialize accelerometer or gyroscope");
-        }
-
-    } else {
-        printf("Failed to initialize ICM-42670P.\n");
-    }
 
     TaskHandle_t sensorHandle = NULL;
-    TaskHandle_t msgHandle = NULL; 
+    //TaskHandle_t msgHandle = NULL; 
     TaskHandle_t usbHandle = NULL;
     TaskHandle_t printHandle = NULL;
     TaskHandle_t ledHandle = NULL;
     TaskHandle_t switchHandle = NULL;
+    TaskHandle_t musicHandle = NULL;
 
     //sensorin luku
     BaseType_t result = xTaskCreate(sensorTask, "sensor", DEFAULT_STACK_SIZE, NULL, 2, &sensorHandle);
@@ -342,11 +506,11 @@ int main() {
         return 0;
     }
     //usb viestintä
-    result = xTaskCreate(msgTask, "msg", DEFAULT_STACK_SIZE, NULL, 2, &msgHandle);
+    /*result = xTaskCreate(msgTask, "msg", DEFAULT_STACK_SIZE, NULL, 2, &msgHandle);
     if(result != pdPASS) {
         printf("msg Task creation failed\n");
         return 0;
-    }
+    }*/
     //näytön päivitys
     result = xTaskCreate(printTask, "print", DEFAULT_STACK_SIZE, NULL, 2, &printHandle);
     if(result != pdPASS) {
@@ -366,25 +530,59 @@ int main() {
         return 0;
     }
     //musiikin soitto
-        //result = xTaskCreate(musicTask, "music", DEFAULT_STACK_SIZE, NULL, 2, &musicHandle);
-        //if(result != pdPASS) {
-            //printf("music Task creation failed\n");
-            //return 0;
-        //}
+        result = xTaskCreate(musicTask, "music", DEFAULT_STACK_SIZE, NULL, 2, &musicHandle);
+        if(result != pdPASS) {
+            printf("music Task creation failed\n");
+            return 0;
+        }
     
-    //napin tarkkailuun
+    //napin tarkkailuun taski
     result = xTaskCreate(switchTask, "switch", DEFAULT_STACK_SIZE, NULL, 2, &switchHandle);
     if(result != pdPASS) {
         printf("switch Task creation failed\n");
         return 0;
     }
+
+    #if (configNUMBER_OF_CORES > 1)
+        vTaskCoreAffinitySet(usbHandle, 1u << 0);
+    #endif
     //tusb init
     tusb_init();
-    //usb_serial_init();
+    usb_serial_init();
 
     // Start the scheduler (never returns)
     vTaskStartScheduler();
 
     // Never reach this line.
     return 0;
+}
+
+//callbackki tuleville hommille
+void tud_cdc_rx_cb(uint8_t itf){   
+    // allocate buffer for the data in the stack
+    uint8_t buf[CFG_TUD_CDC_RX_BUFSIZE+1];
+
+    //printf("RX CDC %d\n", itf);
+
+    // read the available data 
+    uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
+
+    // check if the data was received on the second cdc interface
+    if (itf == 1) {
+        // process the received data
+        //buf[count] = '\n'; 
+        buf[count] = 0;// null-terminate the string
+        
+        strncpy(rxbuf, (char*)buf, BUFFER_SIZE - 1);//kopioidaan rxbuffiin
+        rxbuf[BUFFER_SIZE - 1] = 0;
+        
+        programState = UPDATE;
+
+        usb_serial_print("\nReceived on CDC 1:");
+        usb_serial_print(rxbuf);
+
+        // and echo back OK on CDC 1
+        tud_cdc_n_write(itf, (uint8_t const *) "OK\n", 3);
+        tud_cdc_n_write_flush(itf);
+        }
 }
