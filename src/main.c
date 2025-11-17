@@ -22,8 +22,11 @@
 
 // Default stack size for the tasks. It can be reduced to 1024 if task is not using lot of memory.
 #define DEFAULT_STACK_SIZE  2048 
-#define BUFFER_SIZE         49
+#define BUFFER_SIZE         48
+#define SMAL_BUFFER_SIZE    16
 #define CDC_ITF_TX          1
+#define INPUT_BUFFER_SIZE   256
+
 
 
 //Add here necessary states
@@ -32,10 +35,13 @@ static enum state programState = WAITING;//lisätty static alkuun
 
 char txbuf[BUFFER_SIZE];     //tx bufferi = 10*4+5 = 45
 char rxbuf[BUFFER_SIZE];        //tulo bufferi
-
+static char line[INPUT_BUFFER_SIZE];
+    
+static size_t rx_index = 0;
 
 float ax, ay, az, gx, gy, gz, t;
 uint8_t mark_counter = 0;//lasketaan merkkejä
+//static size_t val_counter = 0; //toimisko size_t?
 
 //yehdäänpä näille hemmetin napeillekkin sitten taski:(
 volatile bool button1_pressed = false;//mussiikki
@@ -70,33 +76,33 @@ static void sensorTask(void *arg){
             //printf("readSensor tilassa sensortask!\n");
             //TODO VALMIIKSI
             if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {
-                printf("%.2f, %.2f\n", gx, gy);// ei koskaan päästä?
-                if (gx > 240 || gx < -240) {
+                //printf("%.2f, %.2f\n", gx, gy);// ei koskaan päästä?
+                if (gx > 210 || gx < -210) {
                     //ongelmana, että pelkkä sprintf kirjoittaa koko paskan yli
                     
-                    printf("merkkilaskuri: %i", mark_counter);
-                    printf(" . tunnistettu!\n");
+                    //printf("merkkilaskuri: %i", mark_counter);
+                    //printf(" . tunnistettu!\n");
                     //snprintf(txbuf,BUFFER_SIZE, ".");
                     add_to_txbuf('.');//lisää kivasti txbufferiin
-                    printf("txbuf=%s\n", txbuf);
+                    //printf("txbuf=%s\n", txbuf);
 
                     
 
-                    rgb_led_write(255, 0, 255);     //vihreä LED
+                    rgb_led_write(0, 255, 0);     //vihreä LED
                     vTaskDelay(pdMS_TO_TICKS(100));
                     //stop_rgb_led();
                     rgb_led_write(0,0,0);
                     vTaskDelay(pdMS_TO_TICKS(100));
 
-                } else if (gy > 240 || gy < -240){
+                } else if (gy > 210 || gy < -210){
                     
-                    printf("merkkilaskuri: %i", mark_counter);
-                    printf(" - tunnistettu!\n");
+                    //printf("merkkilaskuri: %i", mark_counter);
+                    //printf(" - tunnistettu!\n");
                     //snprintf(txbuf,BUFFER_SIZE, "-");
                     add_to_txbuf('-');
-                    printf("txbuf=%s\n", txbuf);
+                    //printf("txbuf=%s\n", txbuf);
 
-                    rgb_led_write(255, 0, 255);     //vihreä LED
+                    rgb_led_write(0, 255, 0);     //vihreä LED
                     vTaskDelay(pdMS_TO_TICKS(100));
                     rgb_led_write(0,0,0);
                     vTaskDelay(pdMS_TO_TICKS(100));
@@ -122,7 +128,7 @@ static void sensorTask(void *arg){
                     tud_cdc_n_write_flush(CDC_ITF_TX);  //lähetys                
                     memset(txbuf, 0, BUFFER_SIZE); //copilot
 
-                    rgb_led_write(255, 0, 255);     //vihreä LED = lähetys ok
+                    rgb_led_write(255, 0, 0);     //vihreä LED = lähetys ok
                     vTaskDelay(pdMS_TO_TICKS(100));
                     stop_rgb_led();
                     vTaskDelay(pdMS_TO_TICKS(100));
@@ -178,27 +184,33 @@ static void sensorTask(void *arg){
 // näytön päivitys
 static void printTask(void *arg){
     (void)arg;
-    
+    init_display();
+    clear_display();
     while (1){
         
         if (programState == UPDATE) {
-            printf("printtask käynnissä!\n");
-            clear_display();
+            //printf("printtask käynnissä!\n");
+            // clear_display();
 
-            rgb_led_write(255, 255, 0);     //sininen LED
-            vTaskDelay(pdMS_TO_TICKS(200));
-            stop_rgb_led();
+            //rgb_led_write(255, 0, 0);     //sininen LED
+            //vTaskDelay(pdMS_TO_TICKS(200));
+            //rgb_led_write(0, 0, 0); 
+            //stop_rgb_led();
 
             // luetaaan rxbufferista merkit
             // piirretään ne näytölle ja jätetään näkyviin --> vilkutetaan merkit ledillä --> sammutetaan näyttö
-            int n = 0;
-            //väliaikaiset bufferit
-            char buf1[] = "         ";
-            char buf2[] = "         ";
-            char buf3[] = "         ";
-            char buf4[] = "         ";
-
             
+            //väliaikaiset bufferit
+            char buf1[SMAL_BUFFER_SIZE];
+            char buf2[SMAL_BUFFER_SIZE];
+            char buf3[SMAL_BUFFER_SIZE];
+            memset(buf1, ' ', SMAL_BUFFER_SIZE);
+            memset(buf2, ' ', SMAL_BUFFER_SIZE);
+            memset(buf3, ' ', SMAL_BUFFER_SIZE);
+
+            //char buf4[] = "         ";
+
+            int n = 0;
             int b1 = 0; 
             int b2 = 0; 
             int b3 = 0;
@@ -209,28 +221,46 @@ static void printTask(void *arg){
                     n++;
                 }
                 //tallennetaan väliaikaisiin buffereihin n-arvon perusteella dataa
-                if (n < 2 && n >= 0 && rxbuf[i] != 0){
-                    buf1[i] = rxbuf[i];
-                    b1++;
+                if (n < 3 && n >= 0 && rxbuf[i] != 0){
+                    buf1[b1++] = rxbuf[i];
                 }
-                else if (n < 4 && n >= 2 && rxbuf[i] != 0){
-                    buf2[i-b1] = rxbuf[i];
-                    b2++;
+                else if (n < 6 && n >= 3 && rxbuf[i] != 0){
+                    buf2[b2++] = rxbuf[i];
                 }
-                else if (n < 6 && n >= 4 && rxbuf[i] != 0){
-                    buf3[i-b2-b1] = rxbuf[i];
-                    b3++;
+                else if (n < 9 && n >= 6 && rxbuf[i] != 0){
+                    buf3[b3++] = rxbuf[i];
+                    
                 }
-                else if (n < 8 && n >= 6 && rxbuf[i] != 0){
+                else if (n >= 9 && rxbuf[i+1] != '\0'){
+                    tud_cdc_n_write(CDC_ITF_TX, (uint8_t const *) "katkes!\n", 8);
+                    tud_cdc_n_write_flush(CDC_ITF_TX);
+                    break;
+                }
+                else {
+                    break;
+                }
+                /*else if (n < 8 && n >= 6 && rxbuf[i] != 0){
                     buf4[i-b3-b2-b1] = rxbuf[i];
-                }
+                }*/
                 
             }
-            
-            write_text_xy(8, 16, buf1);
+            buf1[b1] = 0;
+            buf2[b2] = 0;
+            buf3[b3] = 0;
+
+            usb_serial_print("\nbuf1: ");
+            usb_serial_print(buf1);
+            usb_serial_print("\nbuf2: ");
+            usb_serial_print(buf2);
+            usb_serial_print("\nbuf3: ");
+            usb_serial_print(buf3);
+            usb_serial_flush();
+
+            clear_display();
+            write_text_xy(10, 16, buf1);
             write_text_xy(8, 32, buf2);
             write_text_xy(8, 48, buf3);
-            write_text_xy(8, 64, buf4);
+            //write_text_xy(8, 64, buf4);
             //vTaskDelay(pdMS_TO_TICKS(800));
             //clear_display();
 
@@ -245,24 +275,25 @@ static void ledtask(void *arg) {
     
     while (1) {
         if (programState == UPDATE) {
-            printf("ledtask käynnissä!\n");
+            usb_serial_print("ledtask käynnissä!\n");
             for (int i = 0; i < BUFFER_SIZE; i++) {
                 if (rxbuf[i] == '.') {
                     rgb_led_write(50, 50, 50);     // valkoinen LED
-                    vTaskDelay(pdMS_TO_TICKS(500));
+                    vTaskDelay(pdMS_TO_TICKS(250));
                     //stop_rgb_led();
                     rgb_led_write(0,0,0);
-                    vTaskDelay(pdMS_TO_TICKS(200));
+                    vTaskDelay(pdMS_TO_TICKS(250));
                 }
                 else if (rxbuf[i] == '-') {
                     rgb_led_write(50, 50, 50);     // valkoinen LED
                     vTaskDelay(pdMS_TO_TICKS(500));
                     //stop_rgb_led();
                     rgb_led_write(0,0,0);
-                    vTaskDelay(pdMS_TO_TICKS(200));                   
+                    vTaskDelay(pdMS_TO_TICKS(250));                   
                 }
             }
-            programState = WAITING;      
+            programState = WAITING; 
+            clear_display();     
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -313,12 +344,21 @@ static void switchTask(void *arg){
         if (button2_pressed){
             button2_pressed = false;
 
+
             if (programState == WAITING){
+                //noteeraus
+                rgb_led_write(0,0,255);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                rgb_led_write(0,0,0);
                 programState = READ_SENSOR;
             }
             else if (programState == READ_SENSOR){
-                printf("välinappi painettu!\n");
-                
+                //printf("välinappi painettu!\n");
+                //noteeraus
+                rgb_led_write(0,0,255);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                rgb_led_write(0,0,0);  
+
                 add_to_txbuf(' ');
                 printf("txbuf=%s\n", txbuf);
                 //sprintf(txbuf," ");
@@ -348,7 +388,7 @@ static void switchTask(void *arg){
                         }
                         memset(txbuf, 0, BUFFER_SIZE);
                         mark_counter = 0;
-                        rgb_led_write(255, 0, 255);     //vihreä LED = lähetys ok
+                        rgb_led_write(0, 255, 0);     //vihreä LED = lähetys ok
                         vTaskDelay(pdMS_TO_TICKS(100));
                         rgb_led_write(0, 0, 0);
 
@@ -388,7 +428,7 @@ static void switchTask(void *arg){
                 printf("%s",txbuf);
                 memset(txbuf, 0, BUFFER_SIZE); //copilot
 
-                rgb_led_write(255, 0, 255);     //vihreä LED = lähetys ok
+                rgb_led_write(255, 0, 0);     //vihreä LED = lähetys ok
                 //vTaskDelay(pdMS_TO_TICKS(100));
                 stop_rgb_led();
                 
@@ -451,7 +491,7 @@ int main() {
     while (!stdio_usb_connected()){
         sleep_ms(10);
     }*/
-    printf("testi\n");
+    //printf("testi\n");
     init_hat_sdk();
     //sleep_ms(300); //Wait some time so initialization of USB and hat is done.
 
@@ -461,8 +501,8 @@ int main() {
     memset(txbuf, 0, BUFFER_SIZE);
     memset(rxbuf, 0, BUFFER_SIZE);
     //näyttö
-    init_display();
-    clear_display();
+    //init_display();
+    //clear_display();
     //napit
     gpio_init(BUTTON1);
     gpio_init(BUTTON2);
@@ -558,19 +598,18 @@ int main() {
 }
 
 //callbackki tuleville hommille
-void tud_cdc_rx_cb(uint8_t itf){   
+/*void tud_cdc_rx_cb(uint8_t itf){   
     // allocate buffer for the data in the stack
     uint8_t buf[CFG_TUD_CDC_RX_BUFSIZE+1];
-
-    //printf("RX CDC %d\n", itf);
-
     // read the available data 
     uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
+
+
 
     // check if the data was received on the second cdc interface
     if (itf == 1) {
         // process the received data
-        //buf[count] = '\n'; 
+        
         buf[count] = 0;// null-terminate the string
         
         strncpy(rxbuf, (char*)buf, BUFFER_SIZE - 1);//kopioidaan rxbuffiin
@@ -585,4 +624,71 @@ void tud_cdc_rx_cb(uint8_t itf){
         tud_cdc_n_write(itf, (uint8_t const *) "OK\n", 3);
         tud_cdc_n_write_flush(itf);
         }
+}*/
+
+void tud_cdc_rx_cb(uint8_t itf){
+    // allocate buffer for the data in the stack
+    uint8_t buf[CFG_TUD_CDC_RX_BUFSIZE+1];
+    memset(buf, 0, sizeof(buf));
+    char line[INPUT_BUFFER_SIZE];
+    //memset(line, 0, sizeof(line));
+    // size_t index = 0;
+    // read the available data 
+    uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
+
+    // check if the data was received on the second cdc interface
+    if (itf == 1) {
+        // process the received data
+        
+        buf[count] = 0;// null-terminate the string
+        
+        for (uint32_t i = 0; i < count; i++){
+
+            char c = (char)buf[i];
+
+            if (c == '\n'){//päästään viestin loppuun
+                line[rx_index] = '\0';
+                rx_index = 0;//nollataan 
+                memset(rxbuf, 0, BUFFER_SIZE);
+                strncpy(rxbuf, line, BUFFER_SIZE - 1);//kopioidaan rxbuffiin
+                rxbuf[BUFFER_SIZE - 1] = 0;
+                
+                usb_serial_print("\nReceived on CDC 1:");
+                usb_serial_print(rxbuf);
+
+                // and echo back OK on CDC 1
+                tud_cdc_n_write(itf, (uint8_t const *) "OK\n", 3);
+                tud_cdc_n_write_flush(itf);
+
+                programState = UPDATE;
+
+                return;
+            }
+            /*else if (c == ' '){
+                val_counter++;
+            }*/
+            else if (rx_index < BUFFER_SIZE - 1) {//&& val_counter <= 9)
+                line[rx_index++] = c;
+            }
+            else{
+                //jos täybbä, jätetään koko homma ja rinttiin
+                line[BUFFER_SIZE - 1] = '\0';
+                rx_index = 0;
+                //val_counter = 0;
+                memset(rxbuf, 0, BUFFER_SIZE);
+                strncpy(rxbuf, line, BUFFER_SIZE - 1);
+                rxbuf[BUFFER_SIZE - 1] = 0;
+
+                usb_serial_print("\nReceived on CDC 1:");
+                usb_serial_print(rxbuf);
+                
+                // and echo back OK on CDC 1
+                tud_cdc_n_write(itf, (uint8_t const *) "katkes!\n", 8);
+                tud_cdc_n_write_flush(itf);
+                
+                programState = UPDATE;
+                return;
+            }
+        } 
+    }   
 }
