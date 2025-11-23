@@ -1,16 +1,21 @@
-
 /*
+
+AUTHORS: Valtteri Sauvola ja Miia Korhonen
+
+
 LEDIT:
-pun: '-'
-valk: '.'
-vihr: lähetys ok
-sin: välilyöntinappi painettu
+-pun: '-'
+-valk: '.'
+-vihr: lähetys ok
+-sin: välilyöntinappi painettu
 
-LYHENTEET
--KELA! = koeta esittää lyhyemin asiasi!
+LYHENTEET:
+-KELA! = koeta esittää lyhyemmin asiasi!
 -YKOK! = yhteyskokeilu ok!
+-VALA! = vastaanottamisen aikana lähetys aloitettu!
+-27EMT! = 27 ensimmäistä merkkiä tulostettiin!
 
-TOIMINTA
+TOIMINTA:
 vas. nappi aloittaa merkkien lukemisen
     -1. painallus ei lyö välilyöntiä
     -1. painalluksen jälkeen vas. nappi kirjoittaa välilyönnin
@@ -36,28 +41,28 @@ oik. nappi aloittaa musiikin soiton
 #include "usbSerialDebug/helper.h"
 
 #define DEFAULT_STACK_SIZE  2048 
-#define BUFFER_SIZE         67 //saadaan 9+9 5 merkin mittaista kirjainta
-#define SMALL_BUFFER_SIZE    16
+#define BUFFER_SIZE         93     //saadaan 9+9 5 merkin mittaista kirjainta
+#define SMALL_BUFFER_SIZE   16
 #define CDC_ITF_TX          1
 #define INPUT_BUFFER_SIZE   256
 
 //tilat
-enum state { WAITING=1, READ_SENSOR, NEW_MSG, UPDATE};
+enum state {WAITING=1, READ_SENSOR, UPDATE};
 static enum state programState = WAITING;
 
-char txbuf[BUFFER_SIZE];     //lähetys bufferi
-char rxbuf[BUFFER_SIZE];        //tulo bufferi
+char txbuf[BUFFER_SIZE];        //lähetysbufferi
+char rxbuf[BUFFER_SIZE];        //vastaanottobufferi
 
 static char line[BUFFER_SIZE];
 
 
 
 float ax, ay, az, gx, gy, gz, t;
-uint8_t mark_counter = 0;//lasketaan merkkejä add_to_txbuf
+uint8_t mark_counter = 0;   //lasketaan merkkejä add_to_txbuf
 static size_t rx_index = 0; //vastaanoton käyttöön
 
-volatile bool button1_pressed = false;//mussiikki
-volatile bool button2_pressed = false;//välilyönti
+volatile bool button1_pressed = false;  //mussiikki
+volatile bool button2_pressed = false;  //välilyönti
 volatile bool led_task_vaihees = false;
 volatile bool buffer_overflow = false;
 
@@ -69,15 +74,13 @@ void check_and_put_char(){
     memset(rxbuf, 0, BUFFER_SIZE);
     //vähän raskasta toimintaa, mutta menee se näinkin...
     for (uint8_t i = 0; i < BUFFER_SIZE - 1; i++){
-        if (line[i] == ' ' || line[i] == '.' || line[i] == '-' || line[i] == '\0'){//tarkastetaan, että laillinen merkki->ei roskaa
+        if (line[i] == ' ' || line[i] == '.' || line[i] == '-' || line[i] == '\0'){ //tarkastetaan, että laillinen merkki->ei roskaa
             rxbuf[laskuri++] = line[i];
         }
     }
     memset(line, 0, BUFFER_SIZE);
     laskuri = 0;
 }
-
-
 
 
 //txbuffiin lisäysfunktio
@@ -105,15 +108,15 @@ static void sensorTask(void *arg){
 
             if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {
 
-                if (gx > 225 || gx < -225) {//piste
+                if (gx > 225 || gx < -225) {    //piste
 
-                    add_to_txbuf('.');//lisää kivasti txbufferiin
+                    add_to_txbuf('.');  //lisää kivasti txbufferiin
                     rgb_led_write(50, 50, 50);     //valk LED
                     vTaskDelay(pdMS_TO_TICKS(100));
                     rgb_led_write(0,0,0);
                     vTaskDelay(pdMS_TO_TICKS(100));
 
-                } else if (gy > 225 || gy < -225){//viiva
+                } else if (gy > 225 || gy < -225){  //viiva
 
                     add_to_txbuf('-');
                     rgb_led_write(255, 0, 0);     //pun LED
@@ -124,33 +127,8 @@ static void sensorTask(void *arg){
                 }
                 
             } else {
-                printf("Failed to read imu data\n");
+                usb_serial_print("Failed to read imu data\n");
             }
-            //käydään buf alkiot läpi. jos 2 peräkkäistä välilyöntiä->tilanmuutos
-
-            //välilyöntitaskiin
-            
-            /*for (int i = 1; i<BUFFER_SIZE; i++){
-                printf("sensortask for-silmukka!\n");
-                tud_cdc_n_write(CDC_ITF_TX, txbuf, strlen(txbuf));
-                tud_cdc_n_write_flush(CDC_ITF_TX);
-                if (txbuf[i] == ' ' && txbuf[i-1] == ' '//jos 2 peräkkäistä väl. ja (...) ->lähetys
-                    && tud_cdc_n_connected(CDC_ITF_TX)){//jos tudi linjoilla->ykok
-                    sprintf(txbuf,"\n");
-
-                    tud_cdc_n_write(CDC_ITF_TX, txbuf, strlen(txbuf));
-                    tud_cdc_n_write_flush(CDC_ITF_TX);  //lähetys                
-                    memset(txbuf, 0, BUFFER_SIZE); //copilot
-
-                    rgb_led_write(255, 0, 0);     //vihreä LED = lähetys ok
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    stop_rgb_led();
-                    vTaskDelay(pdMS_TO_TICKS(100));
-
-                    
-                }
-            programState = WAITING;//siirretty for-silmukan ulkopuolelle
-            }*/
         }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -163,7 +141,6 @@ static void printTask(void *arg){
     (void)arg;
     init_display();
     clear_display();
-
 
     while (1){
         
@@ -179,7 +156,7 @@ static void printTask(void *arg){
             char buf4[SMALL_BUFFER_SIZE];
             char buf5[SMALL_BUFFER_SIZE];
             char buf6[SMALL_BUFFER_SIZE];
-            char ybuf1[SMALL_BUFFER_SIZE];//elihhäs ylivuotavat pikkumerkit
+            char ybuf1[SMALL_BUFFER_SIZE];  //elihhäs ylivuotavat pikkumerkit
             char ybuf2[SMALL_BUFFER_SIZE];
             char ybuf3[SMALL_BUFFER_SIZE];
             //laitetaan aina kaikkiin välilyönnit, niin näytöllä näyttää hyvältä :)
@@ -195,7 +172,6 @@ static void printTask(void *arg){
             memset(ybuf3, ' ', SMALL_BUFFER_SIZE);
 
 
-
             int n = 0;
             int b1 = 0; 
             int b2 = 0; 
@@ -209,7 +185,7 @@ static void printTask(void *arg){
             int y2 = 0;
             int y3 = 0;
 
-            for (int i = 0; i < BUFFER_SIZE; i++ ){//käydään läpi koko rxbufferi
+            for (int i = 0; i < BUFFER_SIZE; i++ ){ //käydään läpi koko rxbufferi
                 //jos bufferissa välilyönti, lisätään välilyöntilaskuriin
                 if (rxbuf[i] == ' '){
                     n++;
@@ -269,19 +245,23 @@ static void printTask(void *arg){
             write_text_xy(8, 48, buf3);
 
 
-            if (buf4[0] != 0){//katsellaan, josko tarvitaan toista näytöllistä
+            if (buf4[0] != 0){  //katsellaan, josko tarvitaan toista näytöllistä
                 vTaskDelay(pdMS_TO_TICKS(5000));
                 clear_display();
                 write_text_xy(12, 16, buf4);
                 write_text_xy(8, 32, buf5);
                 write_text_xy(8, 48, buf6);                
             }
-            if (ybuf1[0] != 0){//katsellaan, josko tarvitaan kolmatta näytöllistä ylivuodoille
+            if (ybuf1[0] != 0){ //katsellaan, josko tarvitaan kolmatta näytöllistä ylivuodoille
                 vTaskDelay(pdMS_TO_TICKS(5000));
                 clear_display();
                 write_text_xy(12, 16, ybuf1);
                 write_text_xy(8, 32, ybuf2);
-                write_text_xy(8, 48, ybuf3);                
+                write_text_xy(8, 48, ybuf3);
+                // jos on asiat näin huonosti, niin laitetaan lähettäjälle viestiä, että vain viestin alkupää näytettiin
+                tud_cdc_n_write(CDC_ITF_TX, (uint8_t const *) "27EMT!\n", 7);   //27 ensimmäistä merkkiä tulostettiin! = 27EMT!
+                tud_cdc_n_write_flush(CDC_ITF_TX);
+                               
             }
             while (led_task_vaihees){
                 vTaskDelay(pdMS_TO_TICKS(50));
@@ -294,6 +274,7 @@ static void printTask(void *arg){
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
+
 // LED
 static void ledtask(void *arg) {
     (void)arg;
@@ -335,15 +316,12 @@ static void usbTask(void *arg){
     (void)arg;
 
     while (1) {
-        tud_task();              // With FreeRTOS wait for events
-                                 // Do not add vTaskDelay. 
+        tud_task();
     }
 }
 
 
-
-
-//uusi swich task!!!
+// uusi switch task!!!
 static void switchTask(void *arg){
     (void)arg;
     
@@ -355,7 +333,7 @@ static void switchTask(void *arg){
             if (programState == UPDATE){
                 programState = WAITING;
             //vastaanottamisen aikana lähetys aloitettu == VALA
-                tud_cdc_n_write(CDC_ITF_TX, (uint8_t const *) "VALA\n", 4);//keskeytetty vastaannottajan toimesta
+                tud_cdc_n_write(CDC_ITF_TX, (uint8_t const *) "VALA\n", 4); //keskeytetty vastaannottajan toimesta
                 tud_cdc_n_write_flush(CDC_ITF_TX);
                 
             }
@@ -377,9 +355,9 @@ static void switchTask(void *arg){
                 add_to_txbuf(' ');
                 //käydään txbuff läpi ja etsitään välilyönnit
                 for (int i = 1; i < BUFFER_SIZE; i++){
-                    if (txbuf[i] == ' ' && txbuf[i-1] == ' '){//jos 2 peräkkäistä väl. ja (...) ->lähetys
+                    if (txbuf[i] == ' ' && txbuf[i-1] == ' '){  //jos 2 peräkkäistä väl. ja (...) ->lähetys
 
-                        while (!tud_mounted() || !tud_cdc_n_connected(1)){//jos tudi linjoilla->ykok 
+                        while (!tud_mounted() || !tud_cdc_n_connected(1)){  //jos tudi linjoilla->ykok 
                                 vTaskDelay(pdMS_TO_TICKS(50));
                         }
                         usb_serial_flush();  
@@ -391,11 +369,11 @@ static void switchTask(void *arg){
                         }
                         
 
-                        if (usb_serial_connected()){
+                        /*if (usb_serial_connected()){
                             usb_serial_print("pitäisi olla lähtenyt:\n");
                             usb_serial_print(txbuf);
                             usb_serial_flush();
-                        }
+                        }*/
                         memset(txbuf, 0, BUFFER_SIZE);
                         mark_counter = 0;
                         rgb_led_write(0, 255, 0);     //vihreä LED = lähetys ok
@@ -403,7 +381,7 @@ static void switchTask(void *arg){
                         rgb_led_write(0, 0, 0);
 
                         programState = WAITING;
-                        break; // pitäisi pysäyttää loop
+                        break; //pitäisi pysäyttää loop
                     }
                 }
 
@@ -413,8 +391,6 @@ static void switchTask(void *arg){
         vTaskDelay(pdMS_TO_TICKS(100));
     }  
 }
-//keskeytys, joka lisää välilyönnin, jos ollaan read_sensor ja lähettää, jos 2 väliä
-
 
 
 // musiikin soitto !NYT OK!
@@ -436,15 +412,14 @@ void music(){
     buzzer_turn_off();
 }
 
-//musiikkitaski
+// musiikkitaski
 static void musicTask(void *arg){
     (void)arg;
 
     while(1){
         if (button1_pressed){
-            button1_pressed = false;//muutetaan nappi
-            music();//soitto
-
+            button1_pressed = false;    //muutetaan nappi
+            music();    //soitto
         }
     vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -452,10 +427,10 @@ static void musicTask(void *arg){
 
 static void button_callback(uint gpio, uint32_t eventMask){
     //tarkastetaan callbackistä, kumpi nappi painettiin
-    if (gpio == BUTTON1){//musiikki
-        button1_pressed = true;//vaihetaan trueksi nappipaskassa takasin
+    if (gpio == BUTTON1){   //musiikki
+        button1_pressed = true; //vaihetaan trueksi nappipaskassa takasin
     }
-    else if (gpio == BUTTON2){
+    else if (gpio == BUTTON2){  //välilyönti
         button2_pressed = true;
     }
 }
@@ -463,13 +438,11 @@ static void button_callback(uint gpio, uint32_t eventMask){
 int main() {
 
     stdio_init_all();
-
     init_hat_sdk();
-
     sleep_ms(500);
 
     
-//OMAT ALUSTUKSET
+    // OMAT ALUSTUKSET
     //bufferit
     memset(txbuf, 0, BUFFER_SIZE);
     memset(rxbuf, 0, BUFFER_SIZE);
@@ -480,29 +453,23 @@ int main() {
     gpio_init(BUTTON2);
     gpio_set_dir(BUTTON1, GPIO_IN);
     gpio_set_dir(BUTTON2, GPIO_IN);
-    gpio_set_irq_enabled_with_callback(BUTTON1, GPIO_IRQ_EDGE_RISE, true, &button_callback);//musiikki
-    gpio_set_irq_enabled(BUTTON2, GPIO_IRQ_EDGE_RISE, true);//väli
+    gpio_set_irq_enabled_with_callback(BUTTON1, GPIO_IRQ_EDGE_RISE, true, &button_callback);    //musiikki
+    gpio_set_irq_enabled(BUTTON2, GPIO_IRQ_EDGE_RISE, true);    //välilyönti
 
-    // IMU 
-    
+    //IMU
     if (init_ICM42670() == 0) {
-        
         if (ICM42670_start_with_default_values() != 0){
-          
         }
     } else {
         usb_serial_print("Failed to initialize ICM-42670P.\n");
     }
 
-    //rgb led
+    //rgb_led
     init_rgb_led();
     rgb_led_write(0,0,0);
 
-
     //buzzer
     init_buzzer();
-
-
 
     TaskHandle_t sensorHandle = NULL;
     TaskHandle_t usbHandle = NULL;
@@ -524,18 +491,21 @@ int main() {
         usb_serial_print("print Task creation failed\n");
         return 0;
     }
+
     //LED
     result = xTaskCreate(ledtask, "led", DEFAULT_STACK_SIZE, NULL, 2, &ledHandle);
     if(result != pdPASS) {
         usb_serial_print("print Task creation failed\n");
         return 0;
     }
-    //usb pinon ylläpito
+
+    //usb-pinon ylläpito
     result = xTaskCreate(usbTask, "usb", DEFAULT_STACK_SIZE, NULL, 2, &usbHandle);
     if(result != pdPASS) {
         usb_serial_print("usb Task creation failed\n");
         return 0;
     }
+
     //musiikin soitto
         result = xTaskCreate(musicTask, "music", DEFAULT_STACK_SIZE, NULL, 2, &musicHandle);
         if(result != pdPASS) {
@@ -549,56 +519,49 @@ int main() {
         usb_serial_print("switch Task creation failed\n");
         return 0;
     }
+
     usb_serial_flush();
 
     #if (configNUMBER_OF_CORES > 1)
         vTaskCoreAffinitySet(usbHandle, 1u << 0);
     #endif
-    //tusb init
+
     tusb_init();
     usb_serial_init();
-
-    // Start the scheduler (never returns)
     vTaskStartScheduler();
-
-    // Never reach this line.
     return 0;
 }
 
 
-
 void tud_cdc_rx_cb(uint8_t itf){
-
-    
 //ei haluta ottaa mitään vastaan, kun vanhat kesken
-    if (!led_task_vaihees && !buffer_overflow){//eli katsotaan, että leditaski ei ole käynnissä
+    if (!led_task_vaihees && !buffer_overflow){ //eli katsotaan, että leditaski ei ole käynnissä
         
         uint8_t buf[CFG_TUD_CDC_RX_BUFSIZE+1];
         memset(buf, 0, sizeof(buf));        
 
-        // read the available data 
+        //luethan dattaa
         uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
 
-        // check if the data was received on the second cdc interface
+        //kahtellaan josko sitä dattaa ois saatavilla
         if (itf == 1) {
-            // process the received data
+            //ruethan käsithelemään dattaa
             
-            buf[count] = 0;// null-terminate the string
+            buf[count] = 0; //lyödään nollaterminator
             
 
             for (uint32_t i = 0; i < count; i++){
 
                 char c = (char)buf[i];
                 
-                if (c == '\n'){//päästään viestin loppuun
+                if (c == '\n'){ //päästään viestin loppuun
                     line[rx_index] = '\0';
-                    rx_index = 0;//nollataan 
+                    rx_index = 0;   //nollataan 
 
                     check_and_put_char();
 
                     //kuittaus
-                    
-                    tud_cdc_n_write(itf, (uint8_t const *) "YKOK!\n", 6);//yhteyskokeilu ok! == YKOK!
+                    tud_cdc_n_write(itf, (uint8_t const *) "YKOK!\n", 6);   //yhteyskokeilu ok! == YKOK!
                     tud_cdc_n_write_flush(itf);
 
                     programState = UPDATE;
@@ -610,12 +573,12 @@ void tud_cdc_rx_cb(uint8_t itf){
                     line[rx_index++] = c;
                 }
                 else{
-                    //jos täynnä, jätetään koko homma ja rinttiin
-                    buffer_overflow = true;//ei haluta lukea enää, jos owerflow->tyhjä näyttö
+                    //jos täynnä, jätetään koko homma ja rinttiin vaan
+                    buffer_overflow = true; //ei haluta lukea enää, jos owerflow->tyhjä näyttö
                     line[BUFFER_SIZE - 1] = '\0';
                     rx_index = 0;                 
                     //vasta-asemalle ilmoitus, että mitään ei otettu vastaan
-                    tud_cdc_n_write(itf, (uint8_t const *) "KELA!\n", 6);//koeta esittää lyhyemin asiasi! == KELA!
+                    tud_cdc_n_write(itf, (uint8_t const *) "KELA!\n", 6);   //koeta esittää lyhyemin asiasi! == KELA!
                     tud_cdc_n_write_flush(itf);
                     
                     programState = UPDATE;
@@ -625,6 +588,7 @@ void tud_cdc_rx_cb(uint8_t itf){
         }
     }
     else {
+        // kun ei haluta ottaa merkkejä vastaan, tyhjennetään itf roskikseen, jotta seuraavat viestit ei mankeloidu
         while (tud_cdc_n_available(itf)){
             char roskis[SMALL_BUFFER_SIZE];
             tud_cdc_n_read(itf, roskis, SMALL_BUFFER_SIZE);
