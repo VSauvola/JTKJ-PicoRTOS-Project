@@ -594,5 +594,6 @@ void tud_cdc_rx_cb(uint8_t itf){
             tud_cdc_n_read(itf, roskis, SMALL_BUFFER_SIZE);
         }
         return;
+
     }   
 }
